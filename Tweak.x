@@ -9,81 +9,71 @@
 - (void)_pullToRefresh:(id)sender;
 @end
 
-// Helper functions to reduce code duplication
-static BOOL isHomeTimelineContainer(UIViewController *viewController) {
-    return [viewController.parentViewController isKindOfClass:NSClassFromString(@"THFHomeTimelineContainerViewController")];
+// Helper function to check if current view controller is homepage timeline container
+static inline BOOL isHomeTimelineContainer(UIViewController *vc) {
+    return [vc.parentViewController isKindOfClass:NSClassFromString(@"THFHomeTimelineContainerViewController")];
 }
 
-static void refreshViewIfNeeded(UIView *view, NSTimeInterval delay) {
+// Helper function to refresh layout after a delay on main thread
+static void refreshLayoutAfterDelay(UIView *view, NSTimeInterval delaySeconds) {
     if (!view) return;
-    
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, delay * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delaySeconds * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [view setNeedsLayout];
         [view layoutIfNeeded];
     });
 }
 
 %hook TFNScrollingSegmentedViewController
-// Selectively hide the tab bar only on homepage
+
+// Hide tab bar labels only on homepage timeline container
 - (BOOL)_tfn_shouldHideLabelBar {
-    // Only hide the label bar in the home timeline
+    return isHomeTimelineContainer(self) ? YES : %orig;
+}
+
+// Always load "Following" tab content for homepage timeline container; otherwise default behavior.
+- (UIViewController *)pagingViewController:(id)viewCtrl viewControllerAtIndexPath:(NSIndexPath *)indexPath {
     if (isHomeTimelineContainer(self)) {
-        return YES;
+        NSIndexPath *followingTab = [NSIndexPath indexPathForRow:1 inSection:0]; // Following tab index path
+        return %orig(viewCtrl, followingTab);
     }
     
-    // For all other interfaces, use default behavior
-    return %orig;
+    return %orig(viewCtrl, indexPath);
 }
 
-// Sets the number of tabs in the sub bar
-- (NSInteger)pagingViewController:(id)arg1 numberOfPagesInSection:(id)arg2 { 
-    return %orig;
-}
-
-// Returns the "Following" tab's view controller for both tabs, but only on homepage
-- (UIViewController *)pagingViewController:(UIViewController *)viewController viewControllerAtIndexPath:(NSIndexPath *)indexPath {
-    if (isHomeTimelineContainer(self)) {
-        // Always use the Following tab (index 1)
-        NSIndexPath *followingIndexPath = [NSIndexPath indexPathForRow:1 inSection:0];
-        return %orig(viewController, followingIndexPath);
-    }
-    
-    return %orig(viewController, indexPath);
-}
-
-// Ensure proper view loading and prevent white screen, only on homepage
+// Ensure selected tab defaults to "Following" upon loading homepage timeline container.
 - (void)viewDidLoad {
     %orig;
-    
+
     if (isHomeTimelineContainer(self)) {
-        [self setSelectedIndex:1];
+        [self setSelectedIndex:1]; // Set directly to Following tab at startup
     }
 }
 
-// Additional fix for view appearance to ensure content loads properly, only on homepage
+// Fix potential white screen issue by forcing layout update shortly after appearing.
 - (void)viewDidAppear:(BOOL)animated {
-    %orig;
-    
+    %orig(animated);
+
     if (isHomeTimelineContainer(self)) {
-        [self setSelectedIndex:1];
-        refreshViewIfNeeded(self.view, 0.1);
+        [self setSelectedIndex:1]; 
+        refreshLayoutAfterDelay(self.view, 0.1); // Slight delay ensures proper rendering 
     }
 }
 
-// Ensure selected index is always the Following tab, only on homepage
-- (void)setSelectedIndex:(NSInteger)index {
-    if (isHomeTimelineContainer(self)) {
-        %orig(1); // Always set to Following tab (index 1)
-    } else {
-        %orig(index); // Use the original index for other interfaces
-    }
+// Prevent changing away from "Following" tab when on homepage timeline container.
+- (void)setSelectedIndex:(NSInteger)newIndex {
+   NSInteger forcedIndex = isHomeTimelineContainer(self) ? 1 : newIndex;  
+   %orig(forcedIndex);
 }
+
 %end
 
-// Fix refresh functionality
 %hook THFTimelineViewController
-- (void)_pullToRefresh:(id)sender {
-    %orig;
-    refreshViewIfNeeded(self.view, 0.5);
+
+// Fix pull-to-refresh functionality by ensuring proper layout updates afterward.
+- (void)_pullToRefresh:(id)sender { 
+   %orig(sender);
+   refreshLayoutAfterDelay(self.view, 0.5); // Delay slightly longer for reliable UI update after refreshing data 
 }
+
 %end
