@@ -6,34 +6,6 @@ static NSString *TimelineTabKey = @"THFHomeTimelineContainerViewController.lastS
 static NSString *FollowingTimelineTabValue = @"latest";
 static NSInteger MostRecentTimelineVariant = 1;
 
-@interface _TtC10TFNUISwift26UnifiedSegmentedController : UIViewController
-@property(nonatomic, weak) id v1DataSource;
-@property(nonatomic, weak) id v2DataSource;
-@end
-
-@interface TFNScrollingSegmentedViewController : UIViewController
-@property(nonatomic, weak) id dataSource;
-@property(nonatomic) NSInteger labelBarHideMode;
-@end
-
-static BOOL IsHomeTimelineDataSource(id dataSource) {
-    return [dataSource isKindOfClass:NSClassFromString(
-        @"_TtC32TwitterHomeFeatureImplementation35HomeTimelineContainerViewController")];
-}
-
-static BOOL IsHomeUnifiedSegmentedController(
-    _TtC10TFNUISwift26UnifiedSegmentedController *controller) {
-    return IsHomeTimelineDataSource(controller.v1DataSource) ||
-        IsHomeTimelineDataSource(controller.v2DataSource);
-}
-
-static BOOL IsHomeScrollingDataSource(id dataSource) {
-    return IsHomeTimelineDataSource(dataSource) ||
-        ([dataSource isKindOfClass:
-            NSClassFromString(@"_TtC10TFNUISwift26UnifiedSegmentedController")] &&
-         IsHomeUnifiedSegmentedController(dataSource));
-}
-
 static NSInteger FollowingIndex(NSInteger index) {
     return index == 0 ? 1 : index;
 }
@@ -61,57 +33,28 @@ static BOOL ShouldPreserveScrollState(id state) {
     return state && !StateIsAtTop(state) && StateContentOffsetY(state) > 0;
 }
 
-%hook TFNScrollingSegmentedViewController
-/* Hide the home timeline label bar. */
-- (id)initWithDataSource:(id)dataSource delegate:(id)delegate externalLabelBar:(UIView *)externalLabelBar addLabelBarToNavigationBarBlur:(BOOL)addLabelBarToNavigationBarBlur useAlternateBackgroundColor:(BOOL)useAlternateBackgroundColor {
-    BOOL home = IsHomeScrollingDataSource(dataSource);
-    id result = %orig(dataSource, delegate, externalLabelBar,
-        home ? NO : addLabelBarToNavigationBarBlur, useAlternateBackgroundColor);
-
-    if (home) {
-        [result setLabelBarHideMode:1];
-    }
-
-    return result;
-}
-
-- (void)setLabelBarHideMode:(NSInteger)mode {
-    %orig(IsHomeScrollingDataSource(self.dataSource) ? 1 : mode);
-}
-%end
-
 %hook _TtC32TwitterHomeFeatureImplementation35HomeTimelineContainerViewController
 /* Show only Following. */
-- (NSInteger)numberOfTabsV1In:(id)controller {
-    return MIN(%orig, 1);
+- (NSInteger)numberOfTabsIn:(id)controller {
+    NSInteger count = %orig;
+    return count > 1 ? 1 : count;
 }
 
-- (NSInteger)numberOfTabsV2In:(id)controller {
-    return MIN(%orig, 1);
-}
-
-- (UIViewController *)unifiedSegmentedController:(id)controller v1ViewControllerAtIndex:(NSInteger)index {
+- (UIViewController *)segmentedViewController:(id)controller pageViewControllerAtIndex:(NSInteger)index {
     return %orig(controller, FollowingIndex(index));
 }
 
-- (NSString *)unifiedSegmentedController:(id)controller v1TitleAtIndex:(NSInteger)index {
-    return %orig(controller, FollowingIndex(index));
-}
-
-- (NSString *)unifiedSegmentedController:(id)controller v1AccessibilityLabelAtIndex:(NSInteger)index {
-    return %orig(controller, FollowingIndex(index));
-}
-
-- (UIViewController *)unifiedSegmentedController:(id)controller v2ViewControllerAtIndex:(NSInteger)index {
-    return %orig(controller, FollowingIndex(index));
-}
-
-- (id)unifiedSegmentedController:(id)controller v2DescriptorAtIndex:(NSInteger)index {
+- (id)segmentedViewController:(id)controller descriptorAtIndex:(NSInteger)index {
     return %orig(controller, FollowingIndex(index));
 }
 
 - (BOOL)tfn_supportsTabBarCollapsing {
     return NO;
+}
+
+/* Hide the Following pill tab bar (segmented control + add-tab button). */
+- (id)tfn_navigationBarAccessoryView {
+    return nil;
 }
 
 /* Keep Following selected. */
@@ -164,7 +107,6 @@ static BOOL ShouldPreserveScrollState(id state) {
 %end
 
 %hook TFNTwitterAccount
-/* Block automatic jumps to the top. */
 - (NSInteger)restartFromTopNavigationMinBackgroundMinutes {
     return -1;
 }
