@@ -106,8 +106,7 @@ static BOOL ShouldPreserveScrollState(id state) {
 }
 %end
 
-%hook THFTwitterAccount
-/* Block automatic jumps to the top. */
+%hook TFNTwitterAccount
 - (NSInteger)restartFromTopNavigationMinBackgroundMinutes {
     return -1;
 }
